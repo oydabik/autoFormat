@@ -1,8 +1,8 @@
 import docx
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
+import copy
+import zipfile, io
 
 
 class ReportConfig:
@@ -10,7 +10,6 @@ class ReportConfig:
     FONT_CODE_STYLE = "Courier New"
     FONT_MAIN_SIZE = 14
     FONT_CODE_SIZE = 12
-    COLOR_BLACK = RGBColor(0, 0, 0)
 
 
 class ReportGenerator:
@@ -53,13 +52,33 @@ class ReportGenerator:
         run.font.name = ReportConfig.FONT_CODE_STYLE
         run.font.size = Pt(ReportConfig.FONT_CODE_SIZE)
 
-    def parse(self, input_doc):
+    def parse(self, input_doc, docx_path):
         is_header = True
         current_mode = "main"
+
+        extracted_images = []
+
+        try:
+            with zipfile.ZipFile(docx_path, 'r') as archive:
+                media_files = [f for f in archive.namelist() if f.startswith('word/media/')]
+                media_files.sort()
+
+                for file_name in media_files:
+                    img_data = archive.read(file_name)
+                    extracted_images.append(io.BytesIO(img_data))
+        except Exception:
+            print("cant extract media")
 
         for paragraph in input_doc.paragraphs:
             text = paragraph.text
 
+            if 'w:drawing' in paragraph._p.xml and extracted_images:
+                img_stream = extracted_images.pop(0)
+                p_img = self.doc.add_paragraph()
+                # p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p_img.add_run().add_picture(img_stream, width=Cm(16.5))
+                continue
+                
             if not text.strip():
                 self.doc.add_paragraph()
                 continue
@@ -90,10 +109,12 @@ class ReportGenerator:
 if __name__ == "__main__":
     generator = ReportGenerator()
 
-    try:
-        input_doc = docx.Document("Практика01.docx")
+    file_name = "Практика01.docx"
 
-        generator.parse(input_doc)
+    try:
+        input_doc = docx.Document(file_name)
+
+        generator.parse(input_doc, file_name)
         generator.save("FORMATTED.docx")
         print("Saved!")
 
