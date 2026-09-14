@@ -4,7 +4,7 @@ from enum import Enum, auto
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-import zipfile, io
+import zipfile, io, re
 
 
 @dataclass
@@ -36,6 +36,9 @@ class Block:
     kind: BlockKind
     text: str = ""
     image: bytes | None = None
+
+
+LIST_ITEM_PATTERN = re.compile(r"^\d+\.\s")
 
 
 class ReportConfig:
@@ -93,19 +96,15 @@ class ReportGenerator:
             if not text.strip():
                 continue
 
-            if "Задача" in text or "Выводы" in text:
+            kind = self._classify(text, is_header, current_mode)
+
+            if kind == BlockKind.SECTION:
                 is_header = False
                 current_mode = "main"
-                blocks.append(Block(BlockKind.BODY, text=text))
-                continue
-
-            if "Исходный код" in text:
+            elif kind == BlockKind.SUBHEADER and text.startswith("Исходный код"):
                 is_header = False
                 current_mode = "code"
-                blocks.append(Block(BlockKind.BODY, text=text))
-                continue
 
-            kind = self._classify(text, is_header, current_mode)
             blocks.append(Block(kind, text=text))
 
         return blocks
@@ -134,10 +133,19 @@ class ReportGenerator:
         return extracted_images
 
     def _classify(self, text: str, is_header: bool, current_mode: str) -> BlockKind:
+        if text.startswith(("Задача", "Выводы")):
+            return BlockKind.SECTION
+        if text.startswith(("Решение.", "Скриншоты", "Исходный код")):
+            return BlockKind.SUBHEADER
+        
         if is_header:
             return BlockKind.TITLE
         if current_mode == "code":
             return BlockKind.CODE
+
+        if LIST_ITEM_PATTERN.match(text):
+            return BlockKind.LIST_ITEM
+        
         return BlockKind.BODY
 
     def add_styled_paragraph(self, text: str, kind:BlockKind) -> None:
@@ -171,13 +179,8 @@ if __name__ == "__main__":
 
     try:
         input_doc = docx.Document(file_name)
-        blocks = generator.read_blocks(input_doc, file_name)
-        for b in blocks:
-            preview = b.text[:40] if b.text else f"<image {len(b.image) if b.image else 0} bytes>"
-            print(f"{b.kind.name:12} | {preview}")
         generator.parse(input_doc, file_name)
         generator.save("FORMATTED.docx")
         print("Saved!")
-
     except FileNotFoundError:
         print("Error!")
