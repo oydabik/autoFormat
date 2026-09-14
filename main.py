@@ -4,7 +4,7 @@ from enum import Enum, auto
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-import zipfile, io
+import zipfile, io, re
 
 
 @dataclass
@@ -28,6 +28,17 @@ class BlockKind(Enum):
     CODE = auto()
     LIST_ITEM = auto()
     IMAGE = auto()
+
+
+@dataclass
+class Block:
+    """Один блок документа (абзац, код, картинка)."""
+    kind: BlockKind
+    text: str = ""
+    image: bytes | None = None
+
+
+LIST_ITEM_PATTERN = re.compile(r"^\d+\.\s")
 
 
 class ReportConfig:
@@ -64,11 +75,103 @@ class ReportConfig:
     }
 
 
+class SpacingRules:
+    """Правила пустых строк между блоками"""
+    @staticmethod
+    def need_empty_after(prev_block: Block, next_block: Block | None) -> bool:
+        if next is None:
+            return False
+
+        if prev_block.kind == BlockKind.IMAGE and next_block.kind != BlockKind.IMAGE:
+            return True
+
+        if prev_block.kind == BlockKind.CODE and next_block.kind != BlockKind.CODE:
+            return True
+
+        if prev_block.kind == BlockKind.LIST_ITEM and next_block.kind != BlockKind.LIST_ITEM:
+            return True
+
+        return False
+
+
 class ReportGenerator:
     def __init__(self):
         self.doc = docx.Document()
 
-    def add_styled_paragraph(self, text, kind):
+    def read_blocks(self, input_doc: docx.Document, docx_path: str) -> list[Block]:
+        blocks = []
+        is_header = True
+        current_mode = "main"
+        images = self._extract_images(docx_path)
+        image_index = 0
+        for paragraph in input_doc.paragraphs:
+            text = paragraph.text
+            if 'w:drawing' in paragraph._p.xml:
+                if image_index < len(images):
+                    blocks.append(Block(BlockKind.IMAGE, image=images[image_index]))
+                    image_index += 1
+                continue
+                
+            if not text.strip():
+                continue
+
+            kind = self._classify(text, is_header, current_mode)
+
+            if kind == BlockKind.SECTION:
+                is_header = False
+                current_mode = "main"
+            elif kind == BlockKind.SUBHEADER and text.startswith("Исходный код"):
+                is_header = False
+                current_mode = "code"
+
+            blocks.append(Block(kind, text=text))
+
+        return blocks
+
+    def render_blocks(self, blocks: list[Block]) -> None:
+        """Отрендерить список блоков в документ."""
+        for i, block in enumerate(blocks):
+            if block.kind == BlockKind.IMAGE:
+                img_stream = io.BytesIO(block.image)
+                p_img = self.doc.add_paragraph()
+                p_img.add_run().add_picture(img_stream, width=Cm(16.5))
+            else:
+                self.add_styled_paragraph(block.text, block.kind)
+
+            next_block = blocks[i + 1] if i + 1 < len(blocks) else None
+            if SpacingRules.need_empty_after(block, next_block):
+                self.doc.add_paragraph()
+
+    def _extract_images(self, docx_path: str) -> list[bytes]:
+        extracted_images = []
+        try:
+            with zipfile.ZipFile(docx_path, 'r') as archive:
+                media_files = [f for f in archive.namelist() if f.startswith('word/media/')]
+                media_files.sort()
+                for file_name in media_files:
+                    img_data = archive.read(file_name)
+                    extracted_images.append(img_data)
+        except Exception:
+            print("cant extract media")
+        return extracted_images
+
+    def _classify(self, text: str, is_header: bool, current_mode: str) -> BlockKind:
+        if text.startswith(("Задача", "Выводы")):
+            return BlockKind.SECTION
+        if text.startswith(("Решение.", "Скриншоты", "Исходный код")):
+            return BlockKind.SUBHEADER
+        
+        if is_header:
+            return BlockKind.TITLE
+        if current_mode == "code":
+            return BlockKind.CODE
+
+        if LIST_ITEM_PATTERN.match(text):
+            return BlockKind.LIST_ITEM
+        
+        return BlockKind.BODY
+
+    def add_styled_paragraph(self, text: str, kind:BlockKind) -> None:
         """Добавить абзац с заданным стилем."""
         style = ReportConfig.STYLES[kind]
         p = self.doc.add_paragraph()
@@ -85,72 +188,22 @@ class ReportGenerator:
         rFonts.set(qn('w:eastAsia'), style.font_name)
         run.font.size = Pt(style.font_size)
 
-    def parse(self, input_doc, docx_path):
-        is_header = True
-        current_mode = "main"
+    def parse(self, input_doc: docx.Document, docx_path: str) -> None:
+        blocks = self.read_blocks(input_doc, docx_path)
+        self.render_blocks(blocks)
 
-        extracted_images = []
-
-        try:
-            with zipfile.ZipFile(docx_path, 'r') as archive:
-                media_files = [f for f in archive.namelist() if f.startswith('word/media/')]
-                media_files.sort()
-
-                for file_name in media_files:
-                    img_data = archive.read(file_name)
-                    extracted_images.append(io.BytesIO(img_data))
-        except Exception:
-            print("cant extract media")
-
-        for paragraph in input_doc.paragraphs:
-            text = paragraph.text
-
-            if 'w:drawing' in paragraph._p.xml and extracted_images:
-                img_stream = extracted_images.pop(0)
-                p_img = self.doc.add_paragraph()
-                # p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p_img.add_run().add_picture(img_stream, width=Cm(16.5))
-                continue
-                
-            if not text.strip():
-                self.doc.add_paragraph()
-                continue
-
-            if "Задача" in text or "Выводы" in text:
-                is_header = False
-                current_mode = "main"
-                self.add_styled_paragraph(paragraph.text, BlockKind.BODY)
-                continue
-
-            if "Исходный код" in text:
-                is_header = False
-                current_mode = "code"
-                self.add_styled_paragraph(paragraph.text, BlockKind.BODY)
-                continue
-
-            if is_header:
-                self.add_styled_paragraph(paragraph.text, BlockKind.TITLE)
-            elif current_mode == "main":
-                self.add_styled_paragraph(paragraph.text, BlockKind.BODY)
-            elif current_mode == "code":
-                self.add_styled_paragraph(paragraph.text, BlockKind.CODE)
-            
-
-    def save(self, file_path):
+    def save(self, file_path: str) -> None:
         self.doc.save(file_path)
 
 
 if __name__ == "__main__":
     generator = ReportGenerator()
-
     file_name = "Практика01.docx"
 
     try:
         input_doc = docx.Document(file_name)
-
         generator.parse(input_doc, file_name)
         generator.save("FORMATTED.docx")
         print("Saved!")
-
     except FileNotFoundError:
         print("Error!")
