@@ -76,6 +76,60 @@ class ReportGenerator:
     def __init__(self):
         self.doc = docx.Document()
 
+    def read_blocks(self, input_doc, docx_path) -> list[Block]:
+        blocks = []
+        is_header = True
+        current_mode = "main"
+        images = self._extract_images(docx_path)
+        image_index = 0
+        for paragraph in input_doc.paragraphs:
+            text = paragraph.text
+            if 'w:drawing' in paragraph._p.xml:
+                if image_index < len(images):
+                    blocks.append(Block(BlockKind.IMAGE, image=images[image_index]))
+                    image_index += 1
+                continue
+                
+            if not text.strip():
+                continue
+
+            if "Задача" in text or "Выводы" in text:
+                is_header = False
+                current_mode = "main"
+                blocks.append(Block(BlockKind.BODY, text=text))
+                continue
+
+            if "Исходный код" in text:
+                is_header = False
+                current_mode = "code"
+                blocks.append(Block(BlockKind.BODY, text=text))
+                continue
+
+            kind = self._classify(text, is_header, current_mode)
+            blocks.append(Block(kind, text=text))
+
+        return blocks
+
+    def _extract_images(self, docx_path) -> list[bytes]:
+        extracted_images = []
+        try:
+            with zipfile.ZipFile(docx_path, 'r') as archive:
+                media_files = [f for f in archive.namelist() if f.startswith('word/media/')]
+                media_files.sort()
+                for file_name in media_files:
+                    img_data = archive.read(file_name)
+                    extracted_images.append(img_data)
+        except Exception:
+            print("cant extract media")
+        return extracted_images
+
+    def _classify(self, text, is_header, current_mode) -> BlockKind:
+        if is_header:
+            return BlockKind.TITLE
+        if current_mode == "code":
+            return BlockKind.CODE
+        return BlockKind.BODY
+
     def add_styled_paragraph(self, text, kind):
         """Добавить абзац с заданным стилем."""
         style = ReportConfig.STYLES[kind]
@@ -150,15 +204,17 @@ class ReportGenerator:
 
 if __name__ == "__main__":
     generator = ReportGenerator()
-
     file_name = "Практика01.docx"
 
     try:
         input_doc = docx.Document(file_name)
-
-        generator.parse(input_doc, file_name)
-        generator.save("FORMATTED.docx")
-        print("Saved!")
+        blocks = generator.read_blocks(input_doc, file_name)
+        for b in blocks:
+            preview = b.text[:40] if b.text else f"<image {len(b.image) if b.image else 0} bytes>"
+            print(f"{b.kind.name:12} | {preview}")
+        #generator.parse(input_doc, file_name)
+        #generator.save("FORMATTED.docx")
+        #print("Saved!")
 
     except FileNotFoundError:
         print("Error!")
