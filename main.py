@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 import zipfile, io
 
 
@@ -80,6 +81,8 @@ class ReportGenerator:
 
         run = p.add_run(text)
         run.font.name = style.font_name
+        rFonts = run._element.get_or_add_rPr().get_or_add_rFonts()
+        rFonts.set(qn('w:eastAsia'), style.font_name)
         run.font.size = Pt(style.font_size)
 
     def parse(self, input_doc, docx_path):
