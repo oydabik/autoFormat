@@ -76,7 +76,7 @@ class ReportGenerator:
     def __init__(self):
         self.doc = docx.Document()
 
-    def read_blocks(self, input_doc, docx_path) -> list[Block]:
+    def read_blocks(self, input_doc: docx.Document, docx_path: str) -> list[Block]:
         blocks = []
         is_header = True
         current_mode = "main"
@@ -110,7 +110,17 @@ class ReportGenerator:
 
         return blocks
 
-    def _extract_images(self, docx_path) -> list[bytes]:
+    def render_blocks(self, blocks: list[Block]) -> None:
+        """Отрендерить список блоков в документ."""
+        for block in blocks:
+            if block.kind == BlockKind.IMAGE:
+                img_stream = io.BytesIO(block.image)
+                p_img = self.doc.add_paragraph()
+                p_img.add_run().add_picture(img_stream, width=Cm(16.5))
+            else:
+                self.add_styled_paragraph(block.text, block.kind)
+
+    def _extract_images(self, docx_path: str) -> list[bytes]:
         extracted_images = []
         try:
             with zipfile.ZipFile(docx_path, 'r') as archive:
@@ -123,14 +133,14 @@ class ReportGenerator:
             print("cant extract media")
         return extracted_images
 
-    def _classify(self, text, is_header, current_mode) -> BlockKind:
+    def _classify(self, text: str, is_header: bool, current_mode: str) -> BlockKind:
         if is_header:
             return BlockKind.TITLE
         if current_mode == "code":
             return BlockKind.CODE
         return BlockKind.BODY
 
-    def add_styled_paragraph(self, text, kind):
+    def add_styled_paragraph(self, text: str, kind:BlockKind) -> None:
         """Добавить абзац с заданным стилем."""
         style = ReportConfig.STYLES[kind]
         p = self.doc.add_paragraph()
@@ -147,58 +157,11 @@ class ReportGenerator:
         rFonts.set(qn('w:eastAsia'), style.font_name)
         run.font.size = Pt(style.font_size)
 
-    def parse(self, input_doc, docx_path):
-        is_header = True
-        current_mode = "main"
+    def parse(self, input_doc: docx.Document, docx_path: str) -> None:
+        blocks = self.read_blocks(input_doc, docx_path)
+        self.render_blocks(blocks)
 
-        extracted_images = []
-
-        try:
-            with zipfile.ZipFile(docx_path, 'r') as archive:
-                media_files = [f for f in archive.namelist() if f.startswith('word/media/')]
-                media_files.sort()
-
-                for file_name in media_files:
-                    img_data = archive.read(file_name)
-                    extracted_images.append(io.BytesIO(img_data))
-        except Exception:
-            print("cant extract media")
-
-        for paragraph in input_doc.paragraphs:
-            text = paragraph.text
-
-            if 'w:drawing' in paragraph._p.xml and extracted_images:
-                img_stream = extracted_images.pop(0)
-                p_img = self.doc.add_paragraph()
-                # p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p_img.add_run().add_picture(img_stream, width=Cm(16.5))
-                continue
-                
-            if not text.strip():
-                self.doc.add_paragraph()
-                continue
-
-            if "Задача" in text or "Выводы" in text:
-                is_header = False
-                current_mode = "main"
-                self.add_styled_paragraph(paragraph.text, BlockKind.BODY)
-                continue
-
-            if "Исходный код" in text:
-                is_header = False
-                current_mode = "code"
-                self.add_styled_paragraph(paragraph.text, BlockKind.BODY)
-                continue
-
-            if is_header:
-                self.add_styled_paragraph(paragraph.text, BlockKind.TITLE)
-            elif current_mode == "main":
-                self.add_styled_paragraph(paragraph.text, BlockKind.BODY)
-            elif current_mode == "code":
-                self.add_styled_paragraph(paragraph.text, BlockKind.CODE)
-            
-
-    def save(self, file_path):
+    def save(self, file_path: str) -> None:
         self.doc.save(file_path)
 
 
@@ -212,9 +175,9 @@ if __name__ == "__main__":
         for b in blocks:
             preview = b.text[:40] if b.text else f"<image {len(b.image) if b.image else 0} bytes>"
             print(f"{b.kind.name:12} | {preview}")
-        #generator.parse(input_doc, file_name)
-        #generator.save("FORMATTED.docx")
-        #print("Saved!")
+        generator.parse(input_doc, file_name)
+        generator.save("FORMATTED.docx")
+        print("Saved!")
 
     except FileNotFoundError:
         print("Error!")
