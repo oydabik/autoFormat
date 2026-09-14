@@ -30,6 +30,14 @@ class BlockKind(Enum):
     IMAGE = auto()
 
 
+@dataclass
+class Block:
+    """Один блок документа (абзац, код, картинка)."""
+    kind: BlockKind
+    text: str = ""
+    image: bytes | None = None
+
+
 class ReportConfig:
     _TEXT = ParagraphStyle(
         alignment=WD_ALIGN_PARAGRAPH.JUSTIFY,
