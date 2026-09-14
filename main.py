@@ -1,11 +1,17 @@
-import docx
+import io
+import logging
+import re
+import zipfile
 from dataclasses import dataclass
 from enum import Enum, auto
-from docx.shared import Pt, Cm
+
+import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-import zipfile, io, re
+from docx.shared import Cm, Pt
 
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ParagraphStyle:
@@ -76,10 +82,10 @@ class ReportConfig:
 
 
 class SpacingRules:
-    """Правила пустых строк между блоками"""
+    """Правила пустых строк между блоками."""
     @staticmethod
     def need_empty_after(prev_block: Block, next_block: Block | None) -> bool:
-        if next is None:
+        if next_block is None:
             return False
 
         if prev_block.kind == BlockKind.IMAGE and next_block.kind != BlockKind.IMAGE:
@@ -125,7 +131,7 @@ class ReportGenerator:
                 current_mode = "code"
 
             blocks.append(Block(kind, text=text))
-
+        logger.debug("Прочитано %d блоков", len(blocks))
         return blocks
 
     def render_blocks(self, blocks: list[Block]) -> None:
@@ -141,6 +147,7 @@ class ReportGenerator:
             next_block = blocks[i + 1] if i + 1 < len(blocks) else None
             if SpacingRules.need_empty_after(block, next_block):
                 self.doc.add_paragraph()
+        logger.debug("Отрендерено %d блоков", len(blocks))
 
     def _extract_images(self, docx_path: str) -> list[bytes]:
         extracted_images = []
@@ -151,8 +158,9 @@ class ReportGenerator:
                 for file_name in media_files:
                     img_data = archive.read(file_name)
                     extracted_images.append(img_data)
-        except Exception:
-            print("cant extract media")
+        except (zipfile.BadZipFile, FileNotFoundError) as e:
+            logger.warning("Не удалось извлечь картинки из %s: %s", docx_path, e)
+        logger.debug("Извлечено %d картинок из %s", len(extracted_images), docx_path)
         return extracted_images
 
     def _classify(self, text: str, is_header: bool, current_mode: str) -> BlockKind:
@@ -197,13 +205,21 @@ class ReportGenerator:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)-8s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    output_file = "FORMATTED.docx"
+
     generator = ReportGenerator()
     file_name = "Практика01.docx"
 
     try:
         input_doc = docx.Document(file_name)
         generator.parse(input_doc, file_name)
-        generator.save("FORMATTED.docx")
-        print("Saved!")
+        generator.save(output_file)
+        logger.info("Сохранено: %s", output_file)
     except FileNotFoundError:
-        print("Error!")
+        logger.error("Файл не найден: %s", file_name)
