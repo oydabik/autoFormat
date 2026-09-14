@@ -75,6 +75,25 @@ class ReportConfig:
     }
 
 
+class SpacingRules:
+    """Правила пустых строк между блоками"""
+    @staticmethod
+    def need_empty_after(prev_block: Block, next_block: Block | None) -> bool:
+        if next is None:
+            return False
+
+        if prev_block.kind == BlockKind.IMAGE and next_block.kind != BlockKind.IMAGE:
+            return True
+
+        if prev_block.kind == BlockKind.CODE and next_block.kind != BlockKind.CODE:
+            return True
+
+        if prev_block.kind == BlockKind.LIST_ITEM and next_block.kind != BlockKind.LIST_ITEM:
+            return True
+
+        return False
+
+
 class ReportGenerator:
     def __init__(self):
         self.doc = docx.Document()
@@ -111,13 +130,17 @@ class ReportGenerator:
 
     def render_blocks(self, blocks: list[Block]) -> None:
         """Отрендерить список блоков в документ."""
-        for block in blocks:
+        for i, block in enumerate(blocks):
             if block.kind == BlockKind.IMAGE:
                 img_stream = io.BytesIO(block.image)
                 p_img = self.doc.add_paragraph()
                 p_img.add_run().add_picture(img_stream, width=Cm(16.5))
             else:
                 self.add_styled_paragraph(block.text, block.kind)
+
+            next_block = blocks[i + 1] if i + 1 < len(blocks) else None
+            if SpacingRules.need_empty_after(block, next_block):
+                self.doc.add_paragraph()
 
     def _extract_images(self, docx_path: str) -> list[bytes]:
         extracted_images = []
