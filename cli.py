@@ -6,7 +6,7 @@ from pathlib import Path
 import docx
 from docx.opc.exceptions import PackageNotFoundError
 
-from main import ReportGenerator
+from generator import ReportGenerator
 
 
 logger = logging.getLogger(__name__)
