@@ -202,24 +202,3 @@ class ReportGenerator:
 
     def save(self, file_path: str) -> None:
         self.doc.save(file_path)
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)-8s | %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
-    output_file = "FORMATTED.docx"
-
-    generator = ReportGenerator()
-    file_name = "Практика01.docx"
-
-    try:
-        input_doc = docx.Document(file_name)
-        generator.parse(input_doc, file_name)
-        generator.save(output_file)
-        logger.info("Сохранено: %s", output_file)
-    except FileNotFoundError:
-        logger.error("Файл не найден: %s", file_name)
