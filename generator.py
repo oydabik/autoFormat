@@ -24,18 +24,26 @@ class ReportGenerator:
         current_mode = "main"
         images = self._extract_images(docx_path)
         image_index = 0
+
+        list_counter = 0
+        prev_kind = None
+
         for paragraph in input_doc.paragraphs:
             text = paragraph.text
             if 'w:drawing' in paragraph._p.xml:
                 if image_index < len(images):
                     blocks.append(Block(BlockKind.IMAGE, image=images[image_index]))
                     image_index += 1
+                prev_kind = BlockKind.IMAGE
                 continue
                 
             if not text.strip():
                 continue
 
-            kind = self._classify(text, is_header, current_mode)
+            if self._is_list_item(paragraph):
+                kind = BlockKind.LIST_ITEM
+            else:
+                kind = self._classify(text, is_header, current_mode)
 
             if kind == BlockKind.SECTION:
                 is_header = False
@@ -44,7 +52,17 @@ class ReportGenerator:
                 is_header = False
                 current_mode = "code"
 
+            if kind == BlockKind.LIST_ITEM:
+                if prev_kind == BlockKind.LIST_ITEM:
+                    list_counter += 1
+                else:
+                    list_counter = 1
+                text = f"{list_counter}. {text}"
+            else:
+                list_counter = 0
+
             blocks.append(Block(kind, text=text))
+            prev_kind = kind
         logger.debug("Прочитано %d блоков", len(blocks))
         return blocks
 
@@ -92,6 +110,13 @@ class ReportGenerator:
             return BlockKind.LIST_ITEM
         
         return BlockKind.BODY
+
+    def _is_list_item(self, paragraph: docx.text.paragraph.Paragraph) -> bool:
+        """Проверить, является ли абзац пунктом списка."""
+
+        if paragraph._p.pPr is not None and paragraph._p.pPr.numPr is not None:
+            return True
+        return LIST_ITEM_PATTERN.match(paragraph.text) is not None
 
     def add_styled_paragraph(self, text: str, kind:BlockKind) -> None:
         """Добавить абзац с заданным стилем."""
