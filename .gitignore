@@ -1,4 +1,10 @@
 *.docx
 *~lock.*#
 *.txt
+!requirements.txt
 __pycache__/
+
+# Virtual environment
+.venv/
+venv/
+env/
