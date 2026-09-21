@@ -1,5 +1,8 @@
 # autoFormat
 
+![Tests](https://github.com/oydabik/autoFormat/actions/workflows/tests.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
 Автоматическое форматирование студенческих отчётов `.docx` → `.docx`.
 
 Программа читает отчёт, распознаёт блоки и применяет к ним фиксированные стили.
@@ -98,12 +101,12 @@ models ◀── config ◀── generator ◀── cli
 | `SUBHEADER`  | `Решение.`, `Скриншоты`, `Исходный код`      | justify | TNR         | 14    | 1.5     | 0        | 0        | 0          |
 | `BODY`       | обычный текст                                | justify | TNR         | 14    | 1.5     | 0        | 0        | 0          |
 | `CODE`       | код                                          | left    | Courier New | 12    | 1.0     | 0        | 0        | 0          |
-| `LIST_ITEM`  | пункты выводов                               | justify | TNR         | 14    | 1.5     | 0        | 1.25 см  | −1.25 см   |
+| `LIST_ITEM`  | пункты выводов                               | justify | TNR         | 14    | 1.5     | 0        | 0.5 см  | −0.5 см   |
 
 `TNR` = Times New Roman.
 `Left` и `First line` — отступы в сантиметрах.
-`LIST_ITEM` использует висячий отступ: номер стоит на левом краю,
-переносы строк — с отступом.
+`LIST_ITEM` использует висячий отступ: номер сдвинут вправо на 0.5 см,
+переносы строк — с отступом 1.0 см (как в Word/Google Docs).
 
 ## Типы блоков и как их определять
 
@@ -145,5 +148,13 @@ models ◀── config ◀── generator ◀── cli
 - [x] Логирование
 - [x] CLI (`argparse`)
 - [x] Разбиение на модули
-- [ ] Тесты (`pytest`)
-- [ ] GUI
+- [x] Тесты (`pytest`)
+- [x] CI (GitHub Actions)
+
+## Разработка
+
+Для запуска тестов установите dev-зависимости:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v
