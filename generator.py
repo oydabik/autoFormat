@@ -1,5 +1,6 @@
 import io
 import logging
+import xml.etree.ElementTree as ET
 import zipfile
 
 import docx
@@ -12,6 +13,8 @@ from spacing import SpacingRules
 
 
 logger = logging.getLogger(__name__)
+REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
+EMBED_ATTR = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
 
 
 class ReportGenerator:
@@ -85,10 +88,30 @@ class ReportGenerator:
         extracted_images = []
         try:
             with zipfile.ZipFile(docx_path, 'r') as archive:
-                media_files = [f for f in archive.namelist() if f.startswith('word/media/')]
-                media_files.sort()
-                for file_name in media_files:
-                    img_data = archive.read(file_name)
+                # 1. Порядок rId из document.xml
+                doc_xml = archive.read("word/document.xml").decode("utf-8")
+                doc_root = ET.fromstring(doc_xml)
+                rids = [
+                    el.get(EMBED_ATTR)
+                    for el in doc_root.iter()
+                    if el.get(EMBED_ATTR) is not None
+                ]
+
+                # 2. Mapping rId → media/... из rels
+                rels_xml = archive.read("word/_rels/document.xml.rels").decode("utf-8")
+                rels_root = ET.fromstring(rels_xml)
+                mapping = {
+                    rel.get("Id"): rel.get("Target")
+                    for rel in rels_root.findall(REL_NS)
+                    if rel.get("Target") and rel.get("Target").startswith("media/")
+                }
+
+                # 3. Загружаем картинки в порядке rId
+                for rid in rids:
+                    target = mapping.get(rid)
+                    if target is None:
+                        continue
+                    img_data = archive.read(f"word/{target}")
                     extracted_images.append(img_data)
         except (zipfile.BadZipFile, FileNotFoundError) as e:
             logger.warning("Не удалось извлечь картинки из %s: %s", docx_path, e)
