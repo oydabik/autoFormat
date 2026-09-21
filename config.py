@@ -36,7 +36,7 @@ class ReportConfig:
             font_name="Times New Roman",
             font_size=14,
             line_spacing=1.5,
-            left_indent=1.25,
-            first_line_indent=-1.25,
+            left_indent=0.5,
+            first_line_indent=-0.5,
         ),
     }
