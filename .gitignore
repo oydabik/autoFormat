@@ -2,6 +2,7 @@
 *~lock.*#
 *.txt
 !requirements.txt
+!requirements-dev.txt
 __pycache__/
 
 # Virtual environment
